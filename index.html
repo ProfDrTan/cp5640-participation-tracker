@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CP5640 — Class Participation Tracker</title>
+<style>
+  :root{
+    --ink:#0a1420;
+    --panel:#0f1e2e;
+    --panel-2:#132436;
+    --line:rgba(255,255,255,0.09);
+    --text:#eef4f8;
+    --muted:#8fa3b3;
+    --amber:#f5b544;
+    --amber-dim:#7a5c22;
+    --teal:#2dd4bf;
+    --teal-dim:#134e48;
+    --danger:#e2685a;
+    --radius:14px;
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--ink);color:var(--text);min-height:100vh;}
+  body{
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(45,212,191,0.10), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(245,181,68,0.08), transparent 60%),
+      var(--ink);
+  }
+  .wrap{max-width:1100px;margin:0 auto;padding:28px 20px 60px;}
+
+  header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px;}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);font-weight:700;margin:0 0 6px;}
+  h1{font-size:clamp(24px,4vw,34px);margin:0;font-weight:800;letter-spacing:-0.01em;line-height:1.1;}
+  .sub{color:var(--muted);font-size:14px;margin-top:6px;}
+
+  .statgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0 30px;}
+  @media (max-width:720px){.statgrid{grid-template-columns:repeat(2,1fr);}}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;}
+  .stat .n{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-0.02em;}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.06em;}
+  .stat.teal .n{color:var(--teal);}
+  .stat.amber .n{color:var(--amber);}
+
+  .board{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px 22px 10px;}
+  .board h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 18px;font-weight:700;}
+
+  .row{display:grid;grid-template-columns:34px 1fr 46px;align-items:center;gap:12px;padding:9px 0;}
+  .rank{font-weight:800;color:var(--muted);font-size:14px;text-align:center;}
+  .row.top .rank{color:var(--amber);}
+  .barlabel{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;}
+  .name{font-size:14.5px;font-weight:600;color:var(--text);}
+  .barbg{background:rgba(255,255,255,0.05);border-radius:8px;height:14px;overflow:hidden;}
+  .barfill{height:100%;border-radius:8px;background:linear-gradient(90deg,var(--teal-dim),var(--teal));transition:width .5s ease;min-width:6px;}
+  .row.top .barfill{background:linear-gradient(90deg,var(--amber-dim),var(--amber));}
+  .count{font-weight:800;font-size:15px;text-align:right;color:var(--text);}
+  .zero .count{color:var(--muted);font-weight:600;}
+  .zero .barfill{background:rgba(255,255,255,0.10);}
+
+  .footnote{color:var(--muted);font-size:12px;margin-top:20px;text-align:center;}
+
+  .gear{position:fixed;bottom:18px;right:18px;width:42px;height:42px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;}
+  .gear:active{transform:scale(0.94);}
+
+  .overlay{position:fixed;inset:0;background:rgba(4,9,15,0.72);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
+  .overlay.show{display:flex;}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px;max-width:420px;width:100%;}
+  .modal h3{margin:0 0 4px;font-size:17px;}
+  .modal p{color:var(--muted);font-size:13px;margin:0 0 14px;}
+  .modal input[type=password]{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--ink);color:var(--text);font-size:16px;letter-spacing:.2em;text-align:center;}
+  .modal .actions{display:flex;gap:10px;margin-top:14px;}
+  .btn{flex:1;padding:11px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;}
+  .btn.primary{background:var(--teal);color:#04201c;border:none;}
+  .btn.danger{background:transparent;color:var(--danger);border:1px solid var(--danger);}
+  .err{color:var(--danger);font-size:12px;margin-top:8px;display:none;}
+
+  .panel{position:fixed;inset:0;background:var(--ink);z-index:60;display:none;overflow-y:auto;}
+  .panel.show{display:block;}
+  .panel-inner{max-width:760px;margin:0 auto;padding:22px 18px 90px;}
+  .panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .panel-head h2{font-size:18px;margin:0;}
+  .lockbtn{padding:9px 14px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-size:13px;cursor:pointer;}
+  .panel-sub{color:var(--muted);font-size:13px;margin-bottom:18px;}
+
+  .studentcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:9px;display:flex;align-items:center;gap:12px;}
+  .studentcard .sname{flex:1;font-size:14.5px;font-weight:600;}
+  .studentcard .scount{width:30px;text-align:center;font-weight:800;color:var(--teal);}
+  .plusbtn{width:42px;height:42px;border-radius:10px;background:var(--teal);color:#04201c;border:none;font-size:20px;font-weight:800;cursor:pointer;}
+  .plusbtn:active{transform:scale(0.92);}
+  .minusbtn{width:34px;height:34px;border-radius:9px;background:transparent;color:var(--muted);border:1px solid var(--line);font-size:16px;cursor:pointer;}
+
+  .adminfoot{position:fixed;bottom:0;left:0;right:0;background:var(--ink);border-top:1px solid var(--line);padding:12px 18px;display:flex;gap:10px;justify-content:center;}
+  .toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:10px 16px;border-radius:10px;font-size:13px;z-index:80;opacity:0;transition:opacity .25s;pointer-events:none;}
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">CP5640 · Information Management and Analytics Technology</p>
+      <h1>Class Participation Tracker</h1>
+      <p class="sub">Questions asked after presentations — updated live in class.</p>
+    </div>
+  </header>
+
+  <div class="statgrid">
+    <div class="stat teal"><div class="n" id="statTotal">–</div><div class="l">Questions asked</div></div>
+    <div class="stat amber"><div class="n" id="statAsked">–</div><div class="l">Have asked at least once</div></div>
+    <div class="stat"><div class="n" id="statQuiet">–</div><div class="l">Still to ask a question</div></div>
+    <div class="stat"><div class="n" id="statCoverage">–</div><div class="l">Participation coverage</div></div>
+  </div>
+
+  <div class="board">
+    <h2>Leaderboard</h2>
+    <div id="rows"></div>
+  </div>
+
+  <p class="footnote">Tap a student's name during instructor mode to record a question. Data is shared and updates live.</p>
+</div>
+
+<div class="gear" id="gearBtn">⚙</div>
+
+<div class="overlay" id="pinOverlay">
+  <div class="modal">
+    <h3>Instructor mode</h3>
+    <p>Enter PIN to record questions or reset the tracker.</p>
+    <input type="password" id="pinInput" inputmode="numeric" maxlength="6" placeholder="••••">
+    <div class="err" id="pinErr">Incorrect PIN. Try again.</div>
+    <div class="actions">
+      <button class="btn" id="pinCancel">Cancel</button>
+      <button class="btn primary" id="pinSubmit">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="adminPanel">
+  <div class="panel-inner">
+    <div class="panel-head">
+      <h2>Instructor mode</h2>
+      <button class="lockbtn" id="lockBtn">🔒 Lock</button>
+    </div>
+    <p class="panel-sub">Tap + right after a student asks a question. Data saves automatically.</p>
+    <div id="adminRows"></div>
+  </div>
+  <div class="adminfoot">
+    <button class="btn danger" id="resetBtn">Reset all counts</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const PIN = "5640";
+const STORAGE_KEY = "cp5640-participation-counts";
+
+const students = [
+  { id: "14957836", name: "Rapheal Elroi Paul Etturuthil" },
+  { id: "14229227", name: "Yuhang Han" },
+  { id: "15034176", name: "Ankit Khairia" },
+  { id: "14675490", name: "Khant Min Thant" },
+  { id: "14970758", name: "Quynh Chi Le" },
+  { id: "15166286", name: "Giang Huong Pham" },
+  { id: "14985356", name: "Aishwarya SantoshSingh Rawat" },
+  { id: "14938605", name: "Javier Andy Sutanto" },
+  { id: "15151896", name: "Tan Anh Tran" },
+  { id: "14946160", name: "Darshita Upreti" },
+  { id: "14036432", name: "Tarrun Kumar Venkatesh Kumar" },
+  { id: "15100693", name: "Dakshinya Vijayakumar" },
+  { id: "14959642", name: "Xiaoyu Wei" },
+  { id: "14452145", name: "Qingtian Xiao" },
+  { id: "14502607", name: "Yinuo Xie" },
+  { id: "14575125", name: "Bozi Zhan" },
+  { id: "14912983", name: "Qian Zhang" }
+];
+
+let counts = {};
+students.forEach(s => counts[s.id] = 0);
+let storageOK = true;
+
+async function loadCounts(){
+  try{
+    const res = await window.storage.get(STORAGE_KEY, true);
+    if(res && res.value){
+      const saved = JSON.parse(res.value);
+      students.forEach(s => { if(typeof saved[s.id] === "number") counts[s.id] = saved[s.id]; });
+    }
+  }catch(e){
+    // key doesn't exist yet — that's fine, defaults stay at 0
+  }
+  render();
+}
+
+async function saveCounts(){
+  try{
+    const result = await window.storage.set(STORAGE_KEY, JSON.stringify(counts), true);
+    if(!result){ storageOK = false; showToast("Save failed — check connection."); }
+  }catch(e){
+    storageOK = false;
+    showToast("Save failed — check connection.");
+  }
+}
+
+function showToast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 1800);
+}
+
+function render(){
+  const sorted = [...students].sort((a,b)=> counts[b.id]-counts[a.id]);
+  const max = Math.max(1, ...students.map(s=>counts[s.id]));
+  const total = students.reduce((sum,s)=>sum+counts[s.id],0);
+  const askedCount = students.filter(s=>counts[s.id]>0).length;
+  const quiet = students.length - askedCount;
+  const coverage = Math.round((askedCount/students.length)*100);
+
+  document.getElementById("statTotal").textContent = total;
+  document.getElementById("statAsked").textContent = askedCount + " / " + students.length;
+  document.getElementById("statQuiet").textContent = quiet;
+  document.getElementById("statCoverage").textContent = coverage + "%";
+
+  const rowsEl = document.getElementById("rows");
+  rowsEl.innerHTML = "";
+  sorted.forEach((s, i) => {
+    const c = counts[s.id];
+    const pct = Math.round((c/max)*100);
+    const row = document.createElement("div");
+    row.className = "row" + (i===0 && c>0 ? " top" : "") + (c===0 ? " zero" : "");
+    row.innerHTML = `
+      <div class="rank">${i+1}</div>
+      <div>
+        <div class="barlabel"><span class="name">${s.name}</span></div>
+        <div class="barbg"><div class="barfill" style="width:${Math.max(pct,c>0?6:2)}%"></div></div>
+      </div>
+      <div class="count">${c}</div>`;
+    rowsEl.appendChild(row);
+  });
+
+  renderAdmin();
+}
+
+function renderAdmin(){
+  const adminRowsEl = document.getElementById("adminRows");
+  adminRowsEl.innerHTML = "";
+  students.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(s => {
+    const card = document.createElement("div");
+    card.className = "studentcard";
+    card.innerHTML = `
+      <div class="sname">${s.name}</div>
+      <button class="minusbtn" data-id="${s.id}" data-action="minus">−</button>
+      <div class="scount">${counts[s.id]}</div>
+      <button class="plusbtn" data-id="${s.id}" data-action="plus">+</button>`;
+    adminRowsEl.appendChild(card);
+  });
+  adminRowsEl.querySelectorAll("button").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const id = e.currentTarget.getAttribute("data-id");
+      const action = e.currentTarget.getAttribute("data-action");
+      if(action === "plus") counts[id] += 1;
+      if(action === "minus") counts[id] = Math.max(0, counts[id]-1);
+      render();
+      await saveCounts();
+    });
+  });
+}
+
+// PIN modal handling
+const gearBtn = document.getElementById("gearBtn");
+const pinOverlay = document.getElementById("pinOverlay");
+const pinInput = document.getElementById("pinInput");
+const pinErr = document.getElementById("pinErr");
+const adminPanel = document.getElementById("adminPanel");
+
+gearBtn.addEventListener("click", () => {
+  pinOverlay.classList.add("show");
+  pinErr.style.display = "none";
+  pinInput.value = "";
+  setTimeout(()=>pinInput.focus(), 50);
+});
+
+document.getElementById("pinCancel").addEventListener("click", () => {
+  pinOverlay.classList.remove("show");
+});
+
+document.getElementById("pinSubmit").addEventListener("click", checkPin);
+pinInput.addEventListener("keydown", (e) => { if(e.key === "Enter") checkPin(); });
+
+function checkPin(){
+  if(pinInput.value === PIN){
+    pinOverlay.classList.remove("show");
+    adminPanel.classList.add("show");
+  } else {
+    pinErr.style.display = "block";
+  }
+}
+
+document.getElementById("lockBtn").addEventListener("click", () => {
+  adminPanel.classList.remove("show");
+});
+
+document.getElementById("resetBtn").addEventListener("click", async () => {
+  if(confirm("Reset all question counts to zero? This cannot be undone.")){
+    students.forEach(s => counts[s.id] = 0);
+    render();
+    await saveCounts();
+    showToast("All counts reset.");
+  }
+});
+
+loadCounts();
+</script>
+</body>
+</html>
