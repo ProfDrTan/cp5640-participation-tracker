@@ -215,9 +215,9 @@ let adminSelectedWeek = CURRENT_WEEK; // week being edited in instructor mode
 
 async function loadData(){
   try{
-    const res = await window.storage.get(STORAGE_KEY, true);
-    if(res && res.value){
-      const saved = JSON.parse(res.value);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const saved = JSON.parse(raw);
       for(let w=1; w<=TOTAL_WEEKS; w++){
         if(saved[w]){
           students.forEach(s => {
@@ -235,10 +235,9 @@ async function loadData(){
 
 async function saveData(){
   try{
-    const result = await window.storage.set(STORAGE_KEY, JSON.stringify(weekly), true);
-    if(!result){ showToast("Save failed — check connection."); }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(weekly));
   }catch(e){
-    showToast("Save failed — check connection.");
+    showToast("Save failed — browser storage blocked or full.");
   }
 }
 
@@ -352,9 +351,9 @@ function renderAdmin(){
 
 async function refreshFromStorage(silent){
   try{
-    const res = await window.storage.get(STORAGE_KEY, true);
-    if(res && res.value){
-      const saved = JSON.parse(res.value);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const saved = JSON.parse(raw);
       for(let w=1; w<=TOTAL_WEEKS; w++){
         if(saved[w]){
           students.forEach(s => {
@@ -366,7 +365,7 @@ async function refreshFromStorage(silent){
       if(!silent) showToast("Refreshed.");
     }
   }catch(e){
-    if(!silent) showToast("Refresh failed — check connection.");
+    if(!silent) showToast("Refresh failed.");
   }
 }
 
