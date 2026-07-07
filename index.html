@@ -113,6 +113,9 @@
   </header>
 
   <div class="tabs" id="tabs"></div>
+  <p style="text-align:right;margin:0 0 4px;">
+    <button id="refreshBtn" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;text-decoration:underline;padding:4px;">⟳ Refresh now</button>
+  </p>
 
   <div class="statgrid">
     <div class="stat teal"><div class="n" id="statTotal">–</div><div class="l">Questions asked</div></div>
@@ -347,6 +350,35 @@ function renderAdmin(){
   });
 }
 
+async function refreshFromStorage(silent){
+  try{
+    const res = await window.storage.get(STORAGE_KEY, true);
+    if(res && res.value){
+      const saved = JSON.parse(res.value);
+      for(let w=1; w<=TOTAL_WEEKS; w++){
+        if(saved[w]){
+          students.forEach(s => {
+            if(typeof saved[w][s.id] === "number") weekly[w][s.id] = saved[w][s.id];
+          });
+        }
+      }
+      render();
+      if(!silent) showToast("Refreshed.");
+    }
+  }catch(e){
+    if(!silent) showToast("Refresh failed — check connection.");
+  }
+}
+
+// Poll for updates every 6 seconds so a projected screen stays in sync
+// even if changes are made from a different tab or device.
+let pollTimer = setInterval(() => {
+  const panelOpen = document.getElementById("adminPanel").classList.contains("show");
+  if(!panelOpen) refreshFromStorage(true);
+}, 6000);
+
+document.getElementById("refreshBtn").addEventListener("click", () => refreshFromStorage(false));
+
 // PIN modal handling
 const gearBtn = document.getElementById("gearBtn");
 const pinOverlay = document.getElementById("pinOverlay");
@@ -380,8 +412,9 @@ function checkPin(){
   }
 }
 
-document.getElementById("lockBtn").addEventListener("click", () => {
+document.getElementById("lockBtn").addEventListener("click", async () => {
   adminPanel.classList.remove("show");
+  await refreshFromStorage(true);
 });
 
 function buildCSV(){
