@@ -387,10 +387,10 @@ const pinErr = document.getElementById("pinErr");
 const adminPanel = document.getElementById("adminPanel");
 
 gearBtn.addEventListener("click", () => {
-  pinOverlay.classList.add("show");
-  pinErr.style.display = "none";
-  pinInput.value = "";
-  setTimeout(()=>pinInput.focus(), 50);
+  adminPanel.classList.add("show");
+  adminSelectedWeek = (selectedTab === "total") ? CURRENT_WEEK : selectedTab;
+  renderAdminTabs();
+  renderAdmin();
 });
 
 document.getElementById("pinCancel").addEventListener("click", () => {
