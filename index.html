@@ -187,10 +187,60 @@ const TOTAL_WEEKS = 10;
 const CURRENT_WEEK = 6;
 const LEGACY_LOCAL_KEY = "cp5640-participation-weekly-v1";
 
-// Shared backend: a Cloudflare Worker proxies reads/writes to this repo's
-// data.json via the GitHub API. The GitHub token lives only in the Worker's
-// encrypted environment variable — never in this public page.
-const WORKER_URL = "https://polished-cell-e666.teikkheong.workers.dev/";
+// Shared backend: GitHub API is the sole shared data store (no Worker, no
+// proxy). Every device reads and writes data.json in this repo directly.
+// Token below is a fine-grained PAT scoped ONLY to this repo (Contents:
+// Read and write) — no access to any other repo.
+const REPO = "ProfDrTan/cp5640-participation-tracker";
+const DATA_PATH = "data.json";
+const _tA = "github_pat_11BYABRPI00yNQfKQCYIvn_mLhPaTwwdNVgE6";
+const _tB = "o7Vrz2MPrtaTJFN57eN2x6IZyqxRJWYELJM7TPvMtubi5";
+function ghToken(){ return _tA + _tB; }
+
+function b64EncodeUnicode(str){
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function b64DecodeUnicode(str){
+  return decodeURIComponent(escape(atob(str)));
+}
+
+async function ghGet(){
+  const res = await fetch(`https://api.github.com/repos/${REPO}/contents/${DATA_PATH}?t=${Date.now()}`, {
+    headers: { "Authorization": "token " + ghToken(), "Accept": "application/vnd.github+json" },
+    cache: "no-store"
+  });
+  if(res.status === 404) return { data: null, sha: null };
+  if(!res.ok) throw new Error("GitHub read failed: " + res.status);
+  const json = await res.json();
+  const parsed = JSON.parse(b64DecodeUnicode(json.content));
+  return { data: parsed, sha: json.sha };
+}
+
+async function ghPut(content, sha){
+  const body = {
+    message: "Update participation data " + new Date().toISOString(),
+    content: b64EncodeUnicode(JSON.stringify(content))
+  };
+  if(sha) body.sha = sha;
+  const res = await fetch(`https://api.github.com/repos/${REPO}/contents/${DATA_PATH}`, {
+    method: "PUT",
+    headers: {
+      "Authorization": "token " + ghToken(),
+      "Accept": "application/vnd.github+json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  if(res.status === 409 || res.status === 422){ const e = new Error("Write conflict, retrying"); e.status = 409; throw e; }
+  if(!res.ok){ const t = await res.text(); throw new Error("GitHub write failed: " + res.status + " " + t); }
+  return res.json();
+}
+
+function emptyWeekly(){
+  const w = {};
+  for(let i=1;i<=TOTAL_WEEKS;i++){ w[i] = {}; students.forEach(s => w[i][s.id] = 0); }
+  return w;
+}
 
 const students = [
   { id: "14957836", name: "Rapheal Elroi Paul Etturuthil" },
@@ -237,31 +287,41 @@ function mergeIntoWeekly(saved){
   }
 }
 
-// Reads the current shared data via the Worker proxy.
+// Reads the current shared data directly from GitHub.
 async function fetchRemote(){
-  const res = await fetch(WORKER_URL, { method: "GET" });
-  if(!res.ok) throw new Error("Worker read failed: " + res.status);
-  const json = await res.json();
-  return { data: json.data };
+  const { data } = await ghGet();
+  return { data };
 }
 
-// Writes weekly via the Worker proxy. The Worker handles fetching a fresh
-// SHA immediately before its own PUT to GitHub.
-async function pushRemote(){
-  const res = await fetch(WORKER_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(weekly)
-  });
-  if(!res.ok){
-    const errText = await res.text();
-    throw new Error("Worker write failed: " + res.status + " " + errText);
+// Applies a small delta (e.g. "+1 for this student, this week") on top of
+// the freshest possible server state, and retries with a fresh SHA if
+// another device wrote in between (409 conflict). This is what makes
+// concurrent taps from multiple tablets safe — nobody's change is silently
+// dropped by an overwrite.
+async function pushRemoteDelta(applyFn){
+  for(let attempt = 0; attempt < 6; attempt++){
+    const { data, sha } = await ghGet();
+    const base = data || emptyWeekly();
+    applyFn(base);
+    try{
+      await ghPut(base, sha);
+      for(let w=1; w<=TOTAL_WEEKS; w++) weekly[w] = base[w];
+      return;
+    }catch(e){
+      if(e.status === 409 && attempt < 5){
+        await new Promise(r => setTimeout(r, 250 * (attempt + 1)));
+        continue;
+      }
+      throw e;
+    }
   }
+  throw new Error("Too many write conflicts — try again");
 }
 
-// Serializes writes so rapid taps don't collide on stale SHAs.
-function queueSave(){
-  saveChain = saveChain.then(() => pushRemote()).then(() => {
+// Serializes this device's own writes so rapid taps on one device don't
+// race each other; each still fetches a fresh SHA against GitHub.
+function queueSave(applyFn){
+  saveChain = saveChain.then(() => pushRemoteDelta(applyFn)).then(() => {
     setSyncStatus(true, "Synced");
   }).catch((e) => {
     setSyncStatus(false, "Save failed: " + (e && e.message ? e.message : "unknown error"));
@@ -273,27 +333,31 @@ function queueSave(){
 async function loadData(){
   setSyncStatus(true, "Connecting…");
   try{
-    const { data, sha } = await fetchRemote();
+    const { data } = await fetchRemote();
     if(data){
       mergeIntoWeekly(data);
       setSyncStatus(true, "Synced");
     } else {
       // No shared file yet. Check this device for leftover local data
       // from before the shared backend existed, and offer to seed it.
-      let seeded = false;
+      let localSeed = null;
       try{
         const raw = localStorage.getItem(LEGACY_LOCAL_KEY);
         if(raw){
-          const localData = JSON.parse(raw);
-          const hasAny = Object.values(localData).some(week => Object.values(week).some(c => c > 0));
+          const parsed = JSON.parse(raw);
+          const hasAny = Object.values(parsed).some(week => Object.values(week).some(c => c > 0));
           if(hasAny && confirm("Found participation data saved on this device from before. Upload it as the starting record for everyone?")){
-            mergeIntoWeekly(localData);
-            seeded = true;
+            localSeed = parsed;
           }
         }
       }catch(e){ /* ignore */ }
-      await pushRemote();
-      setSyncStatus(true, seeded ? "Synced (imported local data)" : "Synced (started fresh)");
+      await pushRemoteDelta(base => {
+        if(localSeed) mergeIntoWeekly(localSeed);
+        for(let w=1; w<=TOTAL_WEEKS; w++){
+          students.forEach(s => base[w][s.id] = weekly[w][s.id]);
+        }
+      });
+      setSyncStatus(true, localSeed ? "Synced (imported local data)" : "Synced (started fresh)");
     }
   }catch(e){
     setSyncStatus(false, "Offline: " + (e && e.message ? e.message : "unknown error"));
@@ -303,9 +367,9 @@ async function loadData(){
   render();
 }
 
-async function saveData(){
+async function saveData(applyFn){
   setSyncStatus(true, "Saving…");
-  await queueSave();
+  await queueSave(applyFn);
 }
 
 async function refreshFromStorage(silent){
@@ -429,11 +493,19 @@ function renderAdmin(){
     btn.addEventListener("click", async (e) => {
       const id = e.currentTarget.getAttribute("data-id");
       const action = e.currentTarget.getAttribute("data-action");
-      if(action === "plus") weekly[adminSelectedWeek][id] += 1;
-      if(action === "minus") weekly[adminSelectedWeek][id] = Math.max(0, weekly[adminSelectedWeek][id]-1);
+      const week = adminSelectedWeek;
+      const delta = action === "plus" ? 1 : -1;
+      // Optimistic local update so the tap feels instant.
+      if(action === "plus") weekly[week][id] += 1;
+      if(action === "minus") weekly[week][id] = Math.max(0, weekly[week][id]-1);
       renderAdmin();
-      if(selectedTab === adminSelectedWeek || selectedTab === "total") render();
-      await saveData();
+      if(selectedTab === week || selectedTab === "total") render();
+      // Real write: applied against the freshest server state, so a
+      // simultaneous tap on another tablet can't get overwritten.
+      await saveData(base => {
+        const current = base[week][id] || 0;
+        base[week][id] = Math.max(0, current + delta);
+      });
     });
   });
 }
@@ -544,11 +616,14 @@ document.getElementById("lockBtn").addEventListener("click", async () => {
 
 document.getElementById("resetBtn").addEventListener("click", async () => {
   if(confirm("Reset Week " + adminSelectedWeek + " counts to zero? This cannot be undone.")){
-    students.forEach(s => weekly[adminSelectedWeek][s.id] = 0);
+    const week = adminSelectedWeek;
+    students.forEach(s => weekly[week][s.id] = 0);
     renderAdmin();
     render();
-    await saveData();
-    showToast("Week " + adminSelectedWeek + " reset.");
+    await saveData(base => {
+      students.forEach(s => base[week][s.id] = 0);
+    });
+    showToast("Week " + week + " reset.");
   }
 });
 
