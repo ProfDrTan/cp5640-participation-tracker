@@ -264,7 +264,7 @@ function queueSave(){
   saveChain = saveChain.then(() => pushRemote()).then(() => {
     setSyncStatus(true, "Synced");
   }).catch((e) => {
-    setSyncStatus(false, "Save failed — will retry");
+    setSyncStatus(false, "Save failed: " + (e && e.message ? e.message : "unknown error"));
     console.error(e);
   });
   return saveChain;
@@ -296,7 +296,7 @@ async function loadData(){
       setSyncStatus(true, seeded ? "Synced (imported local data)" : "Synced (started fresh)");
     }
   }catch(e){
-    setSyncStatus(false, "Offline — showing last known data");
+    setSyncStatus(false, "Offline: " + (e && e.message ? e.message : "unknown error"));
     console.error(e);
   }
   renderTabs();
@@ -318,7 +318,7 @@ async function refreshFromStorage(silent){
       if(!silent) showToast("Refreshed.");
     }
   }catch(e){
-    setSyncStatus(false, "Offline — showing last known data");
+    setSyncStatus(false, "Offline: " + (e && e.message ? e.message : "unknown error"));
     if(!silent) showToast("Refresh failed — check connection.");
   }
 }
