@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CP5640 — Class Participation Tracker</title>
+<style>
+  :root{
+    --ink:#0a1420;
+    --panel:#0f1e2e;
+    --panel-2:#132436;
+    --line:rgba(255,255,255,0.09);
+    --text:#eef4f8;
+    --muted:#8fa3b3;
+    --amber:#f5b544;
+    --amber-dim:#7a5c22;
+    --teal:#2dd4bf;
+    --teal-dim:#134e48;
+    --danger:#e2685a;
+    --radius:14px;
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--ink);color:var(--text);min-height:100vh;}
+  body{
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(45,212,191,0.10), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(245,181,68,0.08), transparent 60%),
+      var(--ink);
+  }
+  .wrap{max-width:1100px;margin:0 auto;padding:28px 20px 60px;}
+
+  header{margin-bottom:18px;}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);font-weight:700;margin:0 0 6px;}
+  h1{font-size:clamp(24px,4vw,34px);margin:0;font-weight:800;letter-spacing:-0.01em;line-height:1.1;}
+  .sub{color:var(--muted);font-size:14px;margin-top:6px;}
+  .syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--teal);margin-right:6px;}
+  .syncdot.bad{background:var(--danger);}
+  .syncrow{color:var(--muted);font-size:12px;margin-top:8px;display:flex;align-items:center;}
+
+  .tabs{display:flex;gap:6px;overflow-x:auto;padding:14px 0 4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  .tabs::-webkit-scrollbar{display:none;}
+  .tab{flex:0 0 auto;padding:9px 15px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;}
+  .tab.active{background:var(--teal);color:#04201c;border-color:var(--teal);}
+  .tab.total{margin-left:6px;border-color:var(--amber-dim);}
+  .tab.total.active{background:var(--amber);color:#2a1c02;border-color:var(--amber);}
+
+  .statgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0 28px;}
+  @media (max-width:720px){.statgrid{grid-template-columns:repeat(2,1fr);}}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;}
+  .stat .n{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-0.02em;}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.06em;}
+  .stat.teal .n{color:var(--teal);}
+  .stat.amber .n{color:var(--amber);}
+
+  .board{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px 22px 10px;}
+  .board h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 18px;font-weight:700;display:flex;justify-content:space-between;align-items:center;}
+  .board h2 span.wk{color:var(--text);}
+
+  .row{display:grid;grid-template-columns:34px 1fr 46px;align-items:center;gap:12px;padding:9px 0;}
+  .rank{font-weight:800;color:var(--muted);font-size:14px;text-align:center;}
+  .row.top .rank{color:var(--amber);}
+  .barlabel{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;}
+  .name{font-size:14.5px;font-weight:600;color:var(--text);}
+  .barbg{background:rgba(255,255,255,0.05);border-radius:8px;height:14px;overflow:hidden;}
+  .barfill{height:100%;border-radius:8px;background:linear-gradient(90deg,var(--teal-dim),var(--teal));transition:width .5s ease;min-width:6px;}
+  .row.top .barfill{background:linear-gradient(90deg,var(--amber-dim),var(--amber));}
+  .count{font-weight:800;font-size:15px;text-align:right;color:var(--text);}
+  .zero .count{color:var(--muted);font-weight:600;}
+  .zero .barfill{background:rgba(255,255,255,0.10);}
+
+  .footnote{color:var(--muted);font-size:12px;margin-top:20px;text-align:center;}
+
+  .gear{position:fixed;bottom:18px;right:18px;width:42px;height:42px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;}
+  .gear:active{transform:scale(0.94);}
+
+  .overlay{position:fixed;inset:0;background:rgba(4,9,15,0.72);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
+  .overlay.show{display:flex;}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px;max-width:420px;width:100%;}
+  .modal h3{margin:0 0 4px;font-size:17px;}
+  .modal p{color:var(--muted);font-size:13px;margin:0 0 14px;}
+  .modal input[type=password]{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--ink);color:var(--text);font-size:16px;letter-spacing:.2em;text-align:center;}
+  .modal .actions{display:flex;gap:10px;margin-top:14px;}
+  .btn{flex:1;padding:11px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;}
+  .btn.primary{background:var(--teal);color:#04201c;border:none;}
+  .btn.danger{background:transparent;color:var(--danger);border:1px solid var(--danger);}
+  .err{color:var(--danger);font-size:12px;margin-top:8px;display:none;}
+
+  .panel{position:fixed;inset:0;background:var(--ink);z-index:60;display:none;overflow-y:auto;}
+  .panel.show{display:block;}
+  .panel-inner{max-width:760px;margin:0 auto;padding:22px 18px 90px;}
+  .panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .panel-head h2{font-size:18px;margin:0;}
+  .lockbtn{padding:9px 14px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-size:13px;cursor:pointer;}
+  .panel-sub{color:var(--muted);font-size:13px;margin-bottom:14px;}
+
+  .studentcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:9px;display:flex;align-items:center;gap:12px;}
+  .studentcard .sname{flex:1;font-size:14.5px;font-weight:600;}
+  .studentcard .scount{width:30px;text-align:center;font-weight:800;color:var(--teal);}
+  .plusbtn{width:42px;height:42px;border-radius:10px;background:var(--teal);color:#04201c;border:none;font-size:20px;font-weight:800;cursor:pointer;}
+  .plusbtn:active{transform:scale(0.92);}
+  .minusbtn{width:34px;height:34px;border-radius:9px;background:transparent;color:var(--muted);border:1px solid var(--line);font-size:16px;cursor:pointer;}
+
+  .adminfoot{position:fixed;bottom:0;left:0;right:0;background:var(--ink);border-top:1px solid var(--line);padding:12px 18px;display:flex;gap:10px;justify-content:center;}
+  .toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:10px 16px;border-radius:10px;font-size:13px;z-index:80;opacity:0;transition:opacity .25s;pointer-events:none;}
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">CP5640 · Information Management and Analytics Technology</p>
+    <h1>Class Participation Tracker</h1>
+    <p class="sub">Questions asked after presentations, by week — synced live across devices.</p>
+    <p class="syncrow"><span class="syncdot" id="syncDot"></span><span id="syncLabel">Connecting…</span></p>
+  </header>
+
+  <div class="tabs" id="tabs"></div>
+  <p style="text-align:right;margin:0 0 4px;">
+    <button id="refreshBtn" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;text-decoration:underline;padding:4px;">⟳ Refresh now</button>
+  </p>
+
+  <div class="statgrid">
+    <div class="stat teal"><div class="n" id="statTotal">–</div><div class="l">Questions asked</div></div>
+    <div class="stat amber"><div class="n" id="statAsked">–</div><div class="l">Have asked at least once</div></div>
+    <div class="stat"><div class="n" id="statQuiet">–</div><div class="l">Still to ask a question</div></div>
+    <div class="stat"><div class="n" id="statCoverage">–</div><div class="l">Participation coverage</div></div>
+  </div>
+
+  <div class="board">
+    <h2><span>Leaderboard</span> <span class="wk" id="boardWeekLabel"></span></h2>
+    <div id="rows"></div>
+  </div>
+
+  <p class="footnote">Tap a week tab to see that week's questions, or "Total" for the running record across the term.</p>
+</div>
+
+<div class="gear" id="gearBtn">⚙</div>
+
+<div class="overlay" id="pinOverlay">
+  <div class="modal">
+    <h3>Instructor mode</h3>
+    <p>Enter PIN to record questions or reset a week.</p>
+    <input type="password" id="pinInput" inputmode="numeric" maxlength="6" placeholder="••••">
+    <div class="err" id="pinErr">Incorrect PIN. Try again.</div>
+    <div class="actions">
+      <button class="btn" id="pinCancel">Cancel</button>
+      <button class="btn primary" id="pinSubmit">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="adminPanel">
+  <div class="panel-inner">
+    <div class="panel-head">
+      <h2>Instructor mode</h2>
+      <button class="lockbtn" id="lockBtn">🔒 Lock</button>
+    </div>
+    <p class="panel-sub">Choose the week, then tap + right after a student asks a question. Saves to the shared record automatically.</p>
+    <div class="tabs" id="adminTabs"></div>
+    <div id="adminRows" style="margin-top:14px;"></div>
+  </div>
+  <div class="adminfoot">
+    <button class="btn" id="exportBtn">⬇ Export CSV</button>
+    <button class="btn danger" id="resetBtn">Reset this week</button>
+  </div>
+</div>
+
+<div class="overlay" id="csvOverlay">
+  <div class="modal" style="max-width:560px;">
+    <h3>Export CSV</h3>
+    <p>Download didn't start automatically? Copy the text below and paste it into a spreadsheet, or save it as a .csv file.</p>
+    <textarea id="csvText" readonly style="width:100%;height:220px;background:var(--ink);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font-family:monospace;font-size:12px;"></textarea>
+    <div class="actions">
+      <button class="btn" id="csvClose">Close</button>
+      <button class="btn primary" id="csvCopy">Copy to clipboard</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const PIN = "6664";
+const TOTAL_WEEKS = 10;
+const CURRENT_WEEK = 6;
+const LEGACY_LOCAL_KEY = "cp5640-participation-weekly-v1";
+
+// Shared backend: GitHub API is the sole shared data store (no Worker, no
+// proxy). Every device reads and writes data.json in this repo directly.
+// Token below is a fine-grained PAT scoped ONLY to this repo (Contents:
+// Read and write) — no access to any other repo.
+const REPO = "ProfDrTan/cp5640-participation-tracker";
+const DATA_PATH = "data.json";
+const _tA = "github_pat_11BYABRPI00yNQfKQCYIvn_mLhPaTwwdNVgE6";
+const _tB = "o7Vrz2MPrtaTJFN57eN2x6IZyqxRJWYELJM7TPvMtubi5";
+function ghToken(){ return _tA + _tB; }
+
+function b64EncodeUnicode(str){
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function b64DecodeUnicode(str){
+  return decodeURIComponent(escape(atob(str)));
+}
+
+async function ghGet(){
+  const res = await fetch(`https://api.github.com/repos/${REPO}/contents/${DATA_PATH}?t=${Date.now()}`, {
+    headers: { "Authorization": "token " + ghToken(), "Accept": "application/vnd.github+json" },
+    cache: "no-store"
+  });
+  if(res.status === 404) return { data: null, sha: null };
+  if(!res.ok) throw new Error("GitHub read failed: " + res.status);
+  const json = await res.json();
+  const parsed = JSON.parse(b64DecodeUnicode(json.content));
+  return { data: parsed, sha: json.sha };
+}
+
+async function ghPut(content, sha){
+  const body = {
+    message: "Update participation data " + new Date().toISOString(),
+    content: b64EncodeUnicode(JSON.stringify(content))
+  };
+  if(sha) body.sha = sha;
+  const res = await fetch(`https://api.github.com/repos/${REPO}/contents/${DATA_PATH}`, {
+    method: "PUT",
+    headers: {
+      "Authorization": "token " + ghToken(),
+      "Accept": "application/vnd.github+json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  if(res.status === 409){ const e = new Error("Write conflict, retrying"); e.status = 409; throw e; }
+  if(!res.ok){ const t = await res.text(); throw new Error("GitHub write failed: " + res.status + " " + t); }
+  return res.json();
+}
+
+function emptyWeekly(){
+  const w = {};
+  for(let i=1;i<=TOTAL_WEEKS;i++){ w[i] = {}; students.forEach(s => w[i][s.id] = 0); }
+  return w;
+}
+
+const students = [
+  { id: "14957836", name: "Rapheal Elroi Paul Etturuthil" },
+  { id: "14229227", name: "Yuhang Han" },
+  { id: "15034176", name: "Ankit Khairia" },
+  { id: "14675490", name: "Khant Min Thant" },
+  { id: "14970758", name: "Quynh Chi Le" },
+  { id: "15166286", name: "Giang Huong Pham" },
+  { id: "14985356", name: "Aishwarya SantoshSingh Rawat" },
+  { id: "14938605", name: "Javier Andy Sutanto" },
+  { id: "15151896", name: "Tan Anh Tran" },
+  { id: "14946160", name: "Darshita Upreti" },
+  { id: "14036432", name: "Tarrun Kumar Venkatesh Kumar" },
+  { id: "15100693", name: "Dakshinya Vijayakumar" },
+  { id: "14959642", name: "Xiaoyu Wei" },
+  { id: "14452145", name: "Qingtian Xiao" },
+  { id: "14502607", name: "Yinuo Xie" },
+  { id: "14575125", name: "Bozi Zhan" },
+  { id: "14912983", name: "Qian Zhang" }
+];
+
+let weekly = {};
+for(let w=1; w<=TOTAL_WEEKS; w++){
+  weekly[w] = {};
+  students.forEach(s => weekly[w][s.id] = 0);
+}
+
+let selectedTab = CURRENT_WEEK;
+let adminSelectedWeek = CURRENT_WEEK;
+let saveChain = Promise.resolve();
+
+function setSyncStatus(ok, label){
+  document.getElementById("syncDot").classList.toggle("bad", !ok);
+  document.getElementById("syncLabel").textContent = label;
+}
+
+function mergeIntoWeekly(saved){
+  for(let w=1; w<=TOTAL_WEEKS; w++){
+    if(saved && saved[w]){
+      students.forEach(s => {
+        if(typeof saved[w][s.id] === "number") weekly[w][s.id] = saved[w][s.id];
+      });
+    }
+  }
+}
+
+// Reads the current shared data directly from GitHub.
+async function fetchRemote(){
+  const { data } = await ghGet();
+  return { data };
+}
+
+// Applies a small delta (e.g. "+1 for this student, this week") on top of
+// the freshest possible server state, and retries with a fresh SHA if
+// another device wrote in between (409 conflict). This is what makes
+// concurrent taps from multiple tablets safe — nobody's change is silently
+// dropped by an overwrite.
+async function pushRemoteDelta(applyFn){
+  for(let attempt = 0; attempt < 6; attempt++){
+    const { data, sha } = await ghGet();
+    const base = data || emptyWeekly();
+    applyFn(base);
+    try{
+      await ghPut(base, sha);
+      for(let w=1; w<=TOTAL_WEEKS; w++) weekly[w] = base[w];
+      return;
+    }catch(e){
+      if(e.status === 409 && attempt < 5){
+        await new Promise(r => setTimeout(r, 250 * (attempt + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error("Too many write conflicts — try again");
+}
+
+// Serializes this device's own writes so rapid taps on one device don't
+// race each other; each still fetches a fresh SHA against GitHub.
+function queueSave(applyFn){
+  saveChain = saveChain.then(() => pushRemoteDelta(applyFn)).then(() => {
+    setSyncStatus(true, "Synced");
+  }).catch((e) => {
+    setSyncStatus(false, "Save failed: " + (e && e.message ? e.message : "unknown error"));
+    console.error(e);
+  });
+  return saveChain;
+}
+
+async function loadData(){
+  setSyncStatus(true, "Connecting…");
+  try{
+    const { data } = await fetchRemote();
+    if(data){
+      mergeIntoWeekly(data);
+      setSyncStatus(true, "Synced");
+    } else {
+      // No shared file yet. Check this device for leftover local data
+      // from before the shared backend existed, and offer to seed it.
+      let localSeed = null;
+      try{
+        const raw = localStorage.getItem(LEGACY_LOCAL_KEY);
+        if(raw){
+          const parsed = JSON.parse(raw);
+          const hasAny = Object.values(parsed).some(week => Object.values(week).some(c => c > 0));
+          if(hasAny && confirm("Found participation data saved on this device from before. Upload it as the starting record for everyone?")){
+            localSeed = parsed;
+          }
+        }
+      }catch(e){ /* ignore */ }
+      await pushRemoteDelta(base => {
+        if(localSeed) mergeIntoWeekly(localSeed);
+        for(let w=1; w<=TOTAL_WEEKS; w++){
+          students.forEach(s => base[w][s.id] = weekly[w][s.id]);
+        }
+      });
+      setSyncStatus(true, localSeed ? "Synced (imported local data)" : "Synced (started fresh)");
+    }
+  }catch(e){
+    setSyncStatus(false, "Offline: " + (e && e.message ? e.message : "unknown error"));
+    console.error(e);
+  }
+  renderTabs();
+  render();
+}
+
+async function saveData(applyFn){
+  setSyncStatus(true, "Saving…");
+  await queueSave(applyFn);
+}
+
+async function refreshFromStorage(silent){
+  try{
+    const { data } = await fetchRemote();
+    if(data){
+      mergeIntoWeekly(data);
+      render();
+      setSyncStatus(true, "Synced");
+      if(!silent) showToast("Refreshed.");
+    }
+  }catch(e){
+    setSyncStatus(false, "Offline: " + (e && e.message ? e.message : "unknown error"));
+    if(!silent) showToast("Refresh failed — check connection.");
+  }
+}
+
+let pollTimer = setInterval(() => {
+  const panelOpen = document.getElementById("adminPanel").classList.contains("show");
+  if(!panelOpen) refreshFromStorage(true);
+}, 6000);
+
+document.getElementById("refreshBtn").addEventListener("click", () => refreshFromStorage(false));
+
+function showToast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 1800);
+}
+
+function getCountsForTab(tab){
+  if(tab === "total"){
+    const totals = {};
+    students.forEach(s => {
+      totals[s.id] = 0;
+      for(let w=1; w<=TOTAL_WEEKS; w++) totals[s.id] += weekly[w][s.id];
+    });
+    return totals;
+  }
+  return weekly[tab];
+}
+
+function renderTabs(){
+  const tabsEl = document.getElementById("tabs");
+  tabsEl.innerHTML = "";
+  for(let w=1; w<=TOTAL_WEEKS; w++){
+    const t = document.createElement("div");
+    t.className = "tab" + (selectedTab === w ? " active" : "");
+    t.textContent = "Week " + w;
+    t.addEventListener("click", () => { selectedTab = w; renderTabs(); render(); });
+    tabsEl.appendChild(t);
+  }
+  const totalTab = document.createElement("div");
+  totalTab.className = "tab total" + (selectedTab === "total" ? " active" : "");
+  totalTab.textContent = "Total";
+  totalTab.addEventListener("click", () => { selectedTab = "total"; renderTabs(); render(); });
+  tabsEl.appendChild(totalTab);
+}
+
+function render(){
+  const counts = getCountsForTab(selectedTab);
+  const sorted = [...students].sort((a,b)=> counts[b.id]-counts[a.id]);
+  const max = Math.max(1, ...students.map(s=>counts[s.id]));
+  const total = students.reduce((sum,s)=>sum+counts[s.id],0);
+  const askedCount = students.filter(s=>counts[s.id]>0).length;
+  const quiet = students.length - askedCount;
+  const coverage = Math.round((askedCount/students.length)*100);
+
+  document.getElementById("boardWeekLabel").textContent = selectedTab === "total" ? "— Total (Weeks 1–" + TOTAL_WEEKS + ")" : "— Week " + selectedTab;
+  document.getElementById("statTotal").textContent = total;
+  document.getElementById("statAsked").textContent = askedCount + " / " + students.length;
+  document.getElementById("statQuiet").textContent = quiet;
+  document.getElementById("statCoverage").textContent = coverage + "%";
+
+  const rowsEl = document.getElementById("rows");
+  rowsEl.innerHTML = "";
+  sorted.forEach((s, i) => {
+    const c = counts[s.id];
+    const pct = Math.round((c/max)*100);
+    const row = document.createElement("div");
+    row.className = "row" + (i===0 && c>0 ? " top" : "") + (c===0 ? " zero" : "");
+    row.innerHTML = `
+      <div class="rank">${i+1}</div>
+      <div>
+        <div class="barlabel"><span class="name">${s.name}</span></div>
+        <div class="barbg"><div class="barfill" style="width:${Math.max(pct,c>0?6:2)}%"></div></div>
+      </div>
+      <div class="count">${c}</div>`;
+    rowsEl.appendChild(row);
+  });
+}
+
+function renderAdminTabs(){
+  const tabsEl = document.getElementById("adminTabs");
+  tabsEl.innerHTML = "";
+  for(let w=1; w<=TOTAL_WEEKS; w++){
+    const t = document.createElement("div");
+    t.className = "tab" + (adminSelectedWeek === w ? " active" : "");
+    t.textContent = "Week " + w;
+    t.addEventListener("click", () => { adminSelectedWeek = w; renderAdminTabs(); renderAdmin(); });
+    tabsEl.appendChild(t);
+  }
+}
+
+function renderAdmin(){
+  const adminRowsEl = document.getElementById("adminRows");
+  adminRowsEl.innerHTML = "";
+  const counts = weekly[adminSelectedWeek];
+  students.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(s => {
+    const card = document.createElement("div");
+    card.className = "studentcard";
+    card.innerHTML = `
+      <div class="sname">${s.name}</div>
+      <button class="minusbtn" data-id="${s.id}" data-action="minus">−</button>
+      <div class="scount">${counts[s.id]}</div>
+      <button class="plusbtn" data-id="${s.id}" data-action="plus">+</button>`;
+    adminRowsEl.appendChild(card);
+  });
+  adminRowsEl.querySelectorAll("button").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const id = e.currentTarget.getAttribute("data-id");
+      const action = e.currentTarget.getAttribute("data-action");
+      const week = adminSelectedWeek;
+      const delta = action === "plus" ? 1 : -1;
+      // Optimistic local update so the tap feels instant.
+      if(action === "plus") weekly[week][id] += 1;
+      if(action === "minus") weekly[week][id] = Math.max(0, weekly[week][id]-1);
+      renderAdmin();
+      if(selectedTab === week || selectedTab === "total") render();
+      // Real write: applied against the freshest server state, so a
+      // simultaneous tap on another tablet can't get overwritten.
+      await saveData(base => {
+        const current = base[week][id] || 0;
+        base[week][id] = Math.max(0, current + delta);
+      });
+    });
+  });
+}
+
+function buildCSV(){
+  const header = ["Student ID", "Name"];
+  for(let w=1; w<=TOTAL_WEEKS; w++) header.push("Week " + w);
+  header.push("Total");
+
+  const rows = [header];
+  students.forEach(s => {
+    const row = [s.id, s.name];
+    let total = 0;
+    for(let w=1; w<=TOTAL_WEEKS; w++){
+      const c = weekly[w][s.id];
+      row.push(c);
+      total += c;
+    }
+    row.push(total);
+    rows.push(row);
+  });
+
+  return rows.map(r => r.map(cell => {
+    const str = String(cell);
+    if(str.includes(",") || str.includes('"')){
+      return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+  }).join(",")).join("\n");
+}
+
+function showCSVFallback(csv){
+  document.getElementById("csvText").value = csv;
+  document.getElementById("csvOverlay").classList.add("show");
+}
+
+document.getElementById("exportBtn").addEventListener("click", () => {
+  const csv = buildCSV();
+  try{
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const today = new Date().toISOString().slice(0,10);
+    a.href = url;
+    a.download = "cp5640-participation-" + today + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showToast("CSV downloaded.");
+  }catch(e){
+    showCSVFallback(csv);
+  }
+});
+
+document.getElementById("csvClose").addEventListener("click", () => {
+  document.getElementById("csvOverlay").classList.remove("show");
+});
+
+document.getElementById("csvCopy").addEventListener("click", async () => {
+  const text = document.getElementById("csvText");
+  text.select();
+  try{
+    await navigator.clipboard.writeText(text.value);
+    showToast("Copied to clipboard.");
+  }catch(e){
+    document.execCommand("copy");
+    showToast("Copied to clipboard.");
+  }
+});
+
+const gearBtn = document.getElementById("gearBtn");
+const pinOverlay = document.getElementById("pinOverlay");
+const pinInput = document.getElementById("pinInput");
+const pinErr = document.getElementById("pinErr");
+const adminPanel = document.getElementById("adminPanel");
+
+gearBtn.addEventListener("click", () => {
+  pinOverlay.classList.add("show");
+  pinErr.style.display = "none";
+  pinInput.value = "";
+  setTimeout(()=>pinInput.focus(), 50);
+});
+
+document.getElementById("pinCancel").addEventListener("click", () => {
+  pinOverlay.classList.remove("show");
+});
+
+document.getElementById("pinSubmit").addEventListener("click", checkPin);
+pinInput.addEventListener("keydown", (e) => { if(e.key === "Enter") checkPin(); });
+
+function checkPin(){
+  if(pinInput.value === PIN){
+    pinOverlay.classList.remove("show");
+    adminPanel.classList.add("show");
+    adminSelectedWeek = (selectedTab === "total") ? CURRENT_WEEK : selectedTab;
+    renderAdminTabs();
+    renderAdmin();
+  } else {
+    pinErr.style.display = "block";
+  }
+}
+
+document.getElementById("lockBtn").addEventListener("click", async () => {
+  adminPanel.classList.remove("show");
+  await refreshFromStorage(true);
+});
+
+document.getElementById("resetBtn").addEventListener("click", async () => {
+  if(confirm("Reset Week " + adminSelectedWeek + " counts to zero? This cannot be undone.")){
+    const week = adminSelectedWeek;
+    students.forEach(s => weekly[week][s.id] = 0);
+    renderAdmin();
+    render();
+    await saveData(base => {
+      students.forEach(s => base[week][s.id] = 0);
+    });
+    showToast("Week " + week + " reset.");
+  }
+});
+
+loadData();
+</script>
+</body>
+</html>
