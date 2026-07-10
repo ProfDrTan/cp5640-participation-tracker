@@ -34,8 +34,11 @@
   .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);font-weight:700;margin:0 0 6px;}
   h1{font-size:clamp(24px,4vw,34px);margin:0;font-weight:800;letter-spacing:-0.01em;line-height:1.1;}
   .sub{color:var(--muted);font-size:14px;margin-top:6px;}
+  .syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--teal);margin-right:6px;}
+  .syncdot.bad{background:var(--danger);}
+  .syncrow{color:var(--muted);font-size:12px;margin-top:8px;display:flex;align-items:center;}
 
-  .tabs{display:flex;gap:6px;overflow-x:auto;padding:18px 0 4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  .tabs{display:flex;gap:6px;overflow-x:auto;padding:14px 0 4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
   .tabs::-webkit-scrollbar{display:none;}
   .tab{flex:0 0 auto;padding:9px 15px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;}
   .tab.active{background:var(--teal);color:#04201c;border-color:var(--teal);}
@@ -109,7 +112,8 @@
   <header>
     <p class="eyebrow">CP5640 · Information Management and Analytics Technology</p>
     <h1>Class Participation Tracker</h1>
-    <p class="sub">Questions asked after presentations, by week — updated live in class.</p>
+    <p class="sub">Questions asked after presentations, by week — synced live across devices.</p>
+    <p class="syncrow"><span class="syncdot" id="syncDot"></span><span id="syncLabel">Connecting…</span></p>
   </header>
 
   <div class="tabs" id="tabs"></div>
@@ -153,7 +157,7 @@
       <h2>Instructor mode</h2>
       <button class="lockbtn" id="lockBtn">🔒 Lock</button>
     </div>
-    <p class="panel-sub">Choose the week, then tap + right after a student asks a question.</p>
+    <p class="panel-sub">Choose the week, then tap + right after a student asks a question. Saves to the shared record automatically.</p>
     <div class="tabs" id="adminTabs"></div>
     <div id="adminRows" style="margin-top:14px;"></div>
   </div>
@@ -179,9 +183,14 @@
 
 <script>
 const PIN = "6664";
-const STORAGE_KEY = "cp5640-participation-weekly-v1";
 const TOTAL_WEEKS = 10;
 const CURRENT_WEEK = 6;
+const LEGACY_LOCAL_KEY = "cp5640-participation-weekly-v1";
+
+// Shared backend: a Cloudflare Worker proxies reads/writes to this repo's
+// data.json via the GitHub API. The GitHub token lives only in the Worker's
+// encrypted environment variable — never in this public page.
+const WORKER_URL = "https://polished-cell-e666.teikkheong.workers.dev/";
 
 const students = [
   { id: "14957836", name: "Rapheal Elroi Paul Etturuthil" },
@@ -203,43 +212,123 @@ const students = [
   { id: "14912983", name: "Qian Zhang" }
 ];
 
-// weekly[weekNumber][studentId] = count
 let weekly = {};
 for(let w=1; w<=TOTAL_WEEKS; w++){
   weekly[w] = {};
   students.forEach(s => weekly[w][s.id] = 0);
 }
 
-let selectedTab = CURRENT_WEEK;       // number 1-10, or "total"
-let adminSelectedWeek = CURRENT_WEEK; // week being edited in instructor mode
+let selectedTab = CURRENT_WEEK;
+let adminSelectedWeek = CURRENT_WEEK;
+let saveChain = Promise.resolve();
+
+function setSyncStatus(ok, label){
+  document.getElementById("syncDot").classList.toggle("bad", !ok);
+  document.getElementById("syncLabel").textContent = label;
+}
+
+function mergeIntoWeekly(saved){
+  for(let w=1; w<=TOTAL_WEEKS; w++){
+    if(saved && saved[w]){
+      students.forEach(s => {
+        if(typeof saved[w][s.id] === "number") weekly[w][s.id] = saved[w][s.id];
+      });
+    }
+  }
+}
+
+// Reads the current shared data via the Worker proxy.
+async function fetchRemote(){
+  const res = await fetch(WORKER_URL, { method: "GET" });
+  if(!res.ok) throw new Error("Worker read failed: " + res.status);
+  const json = await res.json();
+  return { data: json.data };
+}
+
+// Writes weekly via the Worker proxy. The Worker handles fetching a fresh
+// SHA immediately before its own PUT to GitHub.
+async function pushRemote(){
+  const res = await fetch(WORKER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(weekly)
+  });
+  if(!res.ok){
+    const errText = await res.text();
+    throw new Error("Worker write failed: " + res.status + " " + errText);
+  }
+}
+
+// Serializes writes so rapid taps don't collide on stale SHAs.
+function queueSave(){
+  saveChain = saveChain.then(() => pushRemote()).then(() => {
+    setSyncStatus(true, "Synced");
+  }).catch((e) => {
+    setSyncStatus(false, "Save failed — will retry");
+    console.error(e);
+  });
+  return saveChain;
+}
 
 async function loadData(){
+  setSyncStatus(true, "Connecting…");
   try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw){
-      const saved = JSON.parse(raw);
-      for(let w=1; w<=TOTAL_WEEKS; w++){
-        if(saved[w]){
-          students.forEach(s => {
-            if(typeof saved[w][s.id] === "number") weekly[w][s.id] = saved[w][s.id];
-          });
+    const { data, sha } = await fetchRemote();
+    if(data){
+      mergeIntoWeekly(data);
+      setSyncStatus(true, "Synced");
+    } else {
+      // No shared file yet. Check this device for leftover local data
+      // from before the shared backend existed, and offer to seed it.
+      let seeded = false;
+      try{
+        const raw = localStorage.getItem(LEGACY_LOCAL_KEY);
+        if(raw){
+          const localData = JSON.parse(raw);
+          const hasAny = Object.values(localData).some(week => Object.values(week).some(c => c > 0));
+          if(hasAny && confirm("Found participation data saved on this device from before. Upload it as the starting record for everyone?")){
+            mergeIntoWeekly(localData);
+            seeded = true;
+          }
         }
-      }
+      }catch(e){ /* ignore */ }
+      await pushRemote();
+      setSyncStatus(true, seeded ? "Synced (imported local data)" : "Synced (started fresh)");
     }
   }catch(e){
-    // no saved data yet — defaults stay at 0
+    setSyncStatus(false, "Offline — showing last known data");
+    console.error(e);
   }
   renderTabs();
   render();
 }
 
 async function saveData(){
+  setSyncStatus(true, "Saving…");
+  await queueSave();
+}
+
+async function refreshFromStorage(silent){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(weekly));
+    const { data } = await fetchRemote();
+    if(data){
+      mergeIntoWeekly(data);
+      render();
+      setSyncStatus(true, "Synced");
+      if(!silent) showToast("Refreshed.");
+    }
   }catch(e){
-    showToast("Save failed — browser storage blocked or full.");
+    setSyncStatus(false, "Offline — showing last known data");
+    if(!silent) showToast("Refresh failed — check connection.");
   }
 }
+
+let pollTimer = setInterval(() => {
+  const panelOpen = document.getElementById("adminPanel").classList.contains("show");
+  if(!panelOpen) refreshFromStorage(true);
+}, 6000);
+
+document.getElementById("refreshBtn").addEventListener("click", () => refreshFromStorage(false));
 
 function showToast(msg){
   const t = document.getElementById("toast");
@@ -349,73 +438,6 @@ function renderAdmin(){
   });
 }
 
-async function refreshFromStorage(silent){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw){
-      const saved = JSON.parse(raw);
-      for(let w=1; w<=TOTAL_WEEKS; w++){
-        if(saved[w]){
-          students.forEach(s => {
-            if(typeof saved[w][s.id] === "number") weekly[w][s.id] = saved[w][s.id];
-          });
-        }
-      }
-      render();
-      if(!silent) showToast("Refreshed.");
-    }
-  }catch(e){
-    if(!silent) showToast("Refresh failed.");
-  }
-}
-
-// Poll for updates every 6 seconds so a projected screen stays in sync
-// even if changes are made from a different tab or device.
-let pollTimer = setInterval(() => {
-  const panelOpen = document.getElementById("adminPanel").classList.contains("show");
-  if(!panelOpen) refreshFromStorage(true);
-}, 6000);
-
-document.getElementById("refreshBtn").addEventListener("click", () => refreshFromStorage(false));
-
-// PIN modal handling
-const gearBtn = document.getElementById("gearBtn");
-const pinOverlay = document.getElementById("pinOverlay");
-const pinInput = document.getElementById("pinInput");
-const pinErr = document.getElementById("pinErr");
-const adminPanel = document.getElementById("adminPanel");
-
-gearBtn.addEventListener("click", () => {
-  adminPanel.classList.add("show");
-  adminSelectedWeek = (selectedTab === "total") ? CURRENT_WEEK : selectedTab;
-  renderAdminTabs();
-  renderAdmin();
-});
-
-document.getElementById("pinCancel").addEventListener("click", () => {
-  pinOverlay.classList.remove("show");
-});
-
-document.getElementById("pinSubmit").addEventListener("click", checkPin);
-pinInput.addEventListener("keydown", (e) => { if(e.key === "Enter") checkPin(); });
-
-function checkPin(){
-  if(pinInput.value === PIN){
-    pinOverlay.classList.remove("show");
-    adminPanel.classList.add("show");
-    adminSelectedWeek = (selectedTab === "total") ? CURRENT_WEEK : selectedTab;
-    renderAdminTabs();
-    renderAdmin();
-  } else {
-    pinErr.style.display = "block";
-  }
-}
-
-document.getElementById("lockBtn").addEventListener("click", async () => {
-  adminPanel.classList.remove("show");
-  await refreshFromStorage(true);
-});
-
 function buildCSV(){
   const header = ["Student ID", "Name"];
   for(let w=1; w<=TOTAL_WEEKS; w++) header.push("Week " + w);
@@ -481,6 +503,43 @@ document.getElementById("csvCopy").addEventListener("click", async () => {
     document.execCommand("copy");
     showToast("Copied to clipboard.");
   }
+});
+
+const gearBtn = document.getElementById("gearBtn");
+const pinOverlay = document.getElementById("pinOverlay");
+const pinInput = document.getElementById("pinInput");
+const pinErr = document.getElementById("pinErr");
+const adminPanel = document.getElementById("adminPanel");
+
+gearBtn.addEventListener("click", () => {
+  pinOverlay.classList.add("show");
+  pinErr.style.display = "none";
+  pinInput.value = "";
+  setTimeout(()=>pinInput.focus(), 50);
+});
+
+document.getElementById("pinCancel").addEventListener("click", () => {
+  pinOverlay.classList.remove("show");
+});
+
+document.getElementById("pinSubmit").addEventListener("click", checkPin);
+pinInput.addEventListener("keydown", (e) => { if(e.key === "Enter") checkPin(); });
+
+function checkPin(){
+  if(pinInput.value === PIN){
+    pinOverlay.classList.remove("show");
+    adminPanel.classList.add("show");
+    adminSelectedWeek = (selectedTab === "total") ? CURRENT_WEEK : selectedTab;
+    renderAdminTabs();
+    renderAdmin();
+  } else {
+    pinErr.style.display = "block";
+  }
+}
+
+document.getElementById("lockBtn").addEventListener("click", async () => {
+  adminPanel.classList.remove("show");
+  await refreshFromStorage(true);
 });
 
 document.getElementById("resetBtn").addEventListener("click", async () => {
